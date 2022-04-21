@@ -85,7 +85,7 @@ def get_ray_directions(H, W, focal, center=None):
 
     return directions
 
-class ScannetFtDataset(BaseDataset):
+class CarlaScannetFtDataset(BaseDataset):
 
     def initialize(self, opt, img_wh=[800,800], downSample=1.0, max_len=-1, norm_w2c=None, norm_c2w=None):
         self.opt = opt
@@ -295,8 +295,8 @@ class ScannetFtDataset(BaseDataset):
         colordir = os.path.join(self.data_dir, self.scan, "exported/color")
         self.image_paths = [f for f in os.listdir(colordir) if os.path.isfile(os.path.join(colordir, f))]
         self.image_paths = [os.path.join(self.data_dir, self.scan, "exported/color/{}.jpg".format(i)) for i in range(len(self.image_paths))]
-        self.all_id_list = self.filter_valid_id(list(range(len(self.image_paths))))
-        # self.all_id_list = list(range(len(self.image_paths)))  # carla modified
+        # self.all_id_list = self.filter_valid_id(list(range(len(self.image_paths))))
+        self.all_id_list = list(range(len(self.image_paths)))  # carla modified
         if len(self.all_id_list) > 2900: # neural point-based graphics' configuration
             self.test_id_list = self.all_id_list[::100]
             self.train_id_list = [self.all_id_list[i] for i in range(len(self.all_id_list)) if (((i % 100) > 19) and ((i % 100) < 81 or (i//100+1)*100>=len(self.all_id_list)))]
@@ -304,6 +304,8 @@ class ScannetFtDataset(BaseDataset):
             step=5
             self.train_id_list = self.all_id_list[::step]
             self.test_id_list = [self.all_id_list[i] for i in range(len(self.all_id_list)) if (i % step) !=0] if self.opt.test_num_step != 1 else self.all_id_list
+            # self.train_id_list = [self.all_id_list[i] for i in range(len(self.all_id_list)) if (i % step) !=0] if self.opt.test_num_step != 1 else self.all_id_list  # carla modified
+            # self.test_id_list = self.all_id_list[::step]
 
         print("all_id_list",len(self.all_id_list))
         print("test_id_list",len(self.test_id_list), self.test_id_list)
@@ -411,14 +413,16 @@ class ScannetFtDataset(BaseDataset):
         return points_xyz
 
     def read_depth(self, filepath):
-        depth_im = cv2.imread(filepath, -1).astype(np.float32)
-        # depth_im = cv2.resize(cv2.imread(filepath, -1).astype(np.float32), (640, 480), interpolation=cv2.INTER_NEAREST)
-        # depth_im = np.exp((depth_im / 255 - 1) * 5.70378)   # carla modified
-        depth_im /= 1000
-        depth_im[depth_im > 8.0] = 0
-        depth_im[depth_im < 0.3] = 0
+        # depth_im = cv2.imread(filepath, -1).astype(np.float32)
+        depth_im = cv2.resize(cv2.imread(filepath, -1).astype(np.float32), (640, 480), interpolation=cv2.INTER_NEAREST)
+        depth_im = np.exp((depth_im / 255 - 1) * 5.70378)   # carla modified normalized depth
+        depth_im *= 1000  # far plane
+        depth_im[depth_im > 300.0] = 0
+        depth_im[depth_im < 0.1] = 0
+        # depth_im /= 1000
+        # depth_im[depth_im > 8.0] = 0
+        # depth_im[depth_im < 0.3] = 0
         return depth_im
-
 
     def load_init_depth_points(self, device="cuda", vox_res=0):
         py, px = torch.meshgrid(
@@ -434,12 +438,12 @@ class ScannetFtDataset(BaseDataset):
             id = self.all_id_list[i]
             c2w = torch.as_tensor(np.loadtxt(os.path.join(self.data_dir, self.scan, "exported/pose", "{}.txt".format(id))).astype(np.float32), device=device, dtype=torch.float32)  #@ self.blender2opencv
             # 480, 640, 1
-            depth = torch.as_tensor(self.read_depth(os.path.join(self.data_dir, self.scan, "exported/depth/{}.png".format(id))), device=device)[..., None]
-            # depth = torch.as_tensor(self.read_depth(os.path.join(self.data_dir, self.scan, "exported/depth/{}.jpg".format(id))), device=device)[..., None]  # carla modified
+            # depth = torch.as_tensor(self.read_depth(os.path.join(self.data_dir, self.scan, "exported/depth/{}.png".format(id))), device=device)[..., None]
+            depth = torch.as_tensor(self.read_depth(os.path.join(self.data_dir, self.scan, "exported/depth/{}.jpg".format(id))), device=device)[..., None]  # carla modified
             cam_xy =  img_xy * depth
             cam_xyz = torch.cat([cam_xy, depth], dim=-1)
             cam_xyz = cam_xyz @ reverse_intrin
-            cam_xyz = cam_xyz[cam_xyz[...,2] > 0,:]
+            cam_xyz = cam_xyz[cam_xyz[...,2] > 0,:]  # drop the points outp of range defined in read_depth
             cam_xyz = torch.cat([cam_xyz, torch.ones_like(cam_xyz[...,:1])], dim=-1)
             world_xyz = (cam_xyz.view(-1,4) @ c2w.t())[...,:3]
             # print("cam_xyz", torch.min(cam_xyz, dim=-2)[0], torch.max(cam_xyz, dim=-2)[0])
@@ -456,7 +460,6 @@ class ScannetFtDataset(BaseDataset):
             world_xyz_all = world_xyz_all[mask]
         print("world_xyz_all:", world_xyz_all.shape)
         return world_xyz_all
-
 
     def __len__(self):
         if self.split == 'train':

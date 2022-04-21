@@ -108,6 +108,10 @@ split="train"
 
 cd run
 
+mkdir -p log
+
+now=`date +%Y%m%d_%H%M%S`
+
 python3 test_ft.py \
         --name $name \
         --scan $scan \
@@ -183,3 +187,4 @@ python3 test_ft.py \
         --max_o $max_o \
         --query_size $query_size \
         --debug
+  2>&1 | tee log/log.$now

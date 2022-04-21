@@ -1,7 +1,7 @@
 #!/bin/bash
 
-nrCheckpoint="../checkpoints"
-nrDataRoot="../data_src"
+nrCheckpoint="../my_checkpoints"
+nrDataRoot="/media/share_data"
 name='scene241'
 
 resume_iter=best #latest
@@ -113,14 +113,14 @@ lr_policy="iter_exponential_decay"
 lr_decay_iters=1000000
 lr_decay_exp=0.1
 
-gpu_ids='2'
+gpu_ids='1'
 
 checkpoints_dir="${nrCheckpoint}/scannet/"
 resume_dir="${nrCheckpoint}/init/dtu_dgt_d012_img0123_conf_agg2_32_dirclr20"
 
 save_iter_freq=10000
 save_point_freq=10000 #301840 #1
-maximum_step=200000 #500000 #250000 #800000
+maximum_step=10000 #200000 #500000 #250000 #800000
 
 niter=10000 #1000000
 niter_decay=10000 #250000

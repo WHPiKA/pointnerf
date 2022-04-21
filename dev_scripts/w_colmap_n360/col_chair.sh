@@ -1,6 +1,6 @@
 #!/bin/bash
-nrCheckpoint="../checkpoints"
-nrDataRoot="../data_src"
+nrCheckpoint="../my_checkpoints"
+nrDataRoot="/media/share_data/colmap"
 name='chair'
 resume_iter=best #
 data_root="${nrDataRoot}/nerf/nerf_synthetic_colmap/"
@@ -114,7 +114,7 @@ resume_dir="${nrCheckpoint}/init/dtu_dgt_d012_img0123_conf_agg2_32_dirclr20"
 
 save_iter_freq=10000
 save_point_freq=10000 #301840 #1
-maximum_step=200000 #800000
+maximum_step=20000 #800000
 
 niter=10000 #1000000
 niter_decay=10000 #250000
@@ -149,9 +149,14 @@ split="train"
 
 cd run
 
+mkdir -p log
+
 for i in $(seq 1 $prob_freq $maximum_step)
 
 do
+
+now=`date +%Y%m%d_%H%M%S`
+
 #python3 gen_pnts.py \
 python3 train_ft.py \
         --name $name \
@@ -271,7 +276,8 @@ python3 train_ft.py \
         --max_o $max_o \
         --prune_max_iter $prune_max_iter \
         --far_thresh $far_thresh \
-        --debug
+        --debug \
+        2>&1 | tee log/log.$now
 done
 #        --zero_one_loss_items $zero_one_loss_items \
 #        --zero_one_loss_weights $zero_one_loss_weights \
