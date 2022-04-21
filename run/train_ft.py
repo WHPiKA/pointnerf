@@ -23,6 +23,7 @@ import random
 import cv2
 from PIL import Image
 from tqdm import tqdm
+import ipdb
 # from models.pointnet2.pointnet2_stack import pointnet2_utils as pointnet2_stack_utils
 # from pcdet.ops.pointnet2.pointnet2_stack import pointnet2_utils as pointnet2_stack_utils
 import gc
@@ -546,7 +547,7 @@ def get_latest_epoch(resume_dir):
     os.makedirs(resume_dir, exist_ok=True)
     str_epoch = [file.split("_")[0] for file in os.listdir(resume_dir) if file.endswith("_states.pth")]
     int_epoch = [int(i) for i in str_epoch]
-    return None if len(int_epoch) == 0 else str_epoch[int_epoch.index(max(int_epoch))]
+    return None if len(int_epoch) == 0 else int(str_epoch[int_epoch.index(max(int_epoch))])
 
 
 def create_all_bg(dataset, model, img_lst, c2ws_lst, w2cs_lst, intrinsics_all, HDWD_lst, dummy=False):
@@ -585,7 +586,6 @@ def main():
     cur_device = torch.device('cuda:{}'.format(opt.gpu_ids[0]) if opt.
                               gpu_ids else torch.device('cpu'))
     print("opt.color_loss_items ", opt.color_loss_items)
-
     if opt.debug:
         torch.autograd.set_detect_anomaly(True)
         print(fmt.RED +
@@ -650,7 +650,9 @@ def main():
             model.setup(opt)
             model.eval()
             if load_points in [1,3]:
-                points_xyz_all = train_dataset.load_init_points()
+                print("loading init points")
+                points_xyz_all = train_dataset.load_init_points()  # 1500M -> 2074M
+                # ipdb.set_trace()
             if load_points == 2:
                 points_xyz_all = train_dataset.load_init_depth_points(device="cuda", vox_res=100)
             if load_points == 3:
@@ -674,7 +676,6 @@ def main():
                 print("vis depth; after pc mask depth_xyz_all",depth_xyz_all.shape)
                 points_xyz_all = [points_xyz_all, depth_xyz_all] if opt.vox_res > 0 else torch.cat([points_xyz_all, depth_xyz_all],dim=0)
                 del depth_xyz_all, depth_maskinds, mask, pc_maskgrid_id, max_id_lst, max_id, min_id, all_grid
-
             if opt.ranges[0] > -99.0:
                 ranges = torch.as_tensor(opt.ranges, device=points_xyz_all.device, dtype=torch.float32)
                 mask = torch.prod(
@@ -682,7 +683,7 @@ def main():
                     dim=-1) > 0
                 points_xyz_all = points_xyz_all[mask]
 
-
+            
             if opt.vox_res > 0:
                 points_xyz_all = [points_xyz_all] if not isinstance(points_xyz_all, list) else points_xyz_all
                 points_xyz_holder = torch.zeros([0,3], dtype=points_xyz_all[0].dtype, device="cuda")
@@ -740,7 +741,6 @@ def main():
             # visualizer.save_neural_points("cam", campos, None, None, None)
             # print("vis")
             # exit()
-
             opt.resume_iter = opt.resume_iter if opt.resume_iter != "latest" else get_latest_epoch(opt.resume_dir)
             opt.is_train = True
             opt.mode = 2
@@ -833,8 +833,10 @@ def main():
         epoch_start_time = time.time()
         for i, data in enumerate(data_loader):
             if opt.maximum_step is not None and total_steps >= opt.maximum_step:
+                print("####################  first if ######################")
                 break
             if opt.prune_iter > 0 and real_start != total_steps and total_steps % opt.prune_iter == 0 and total_steps < (opt.maximum_step - 1) and total_steps > 0 and total_steps <= opt.prune_max_iter:
+                print("####################  second if ######################")
                 with torch.no_grad():
                     model.clean_optimizer()
                     model.clean_scheduler()
@@ -845,6 +847,7 @@ def main():
                     torch.cuda.synchronize()
 
             if opt.prob_freq > 0 and real_start != total_steps and total_steps % opt.prob_freq == 0 and total_steps < (opt.maximum_step - 1) and total_steps > 0:
+                print("####################  third if ######################")
                 if opt.prob_kernel_size is not None:
                     tier = np.sum(np.asarray(opt.prob_tiers) < total_steps)
                 if (model.top_ray_miss_loss[0] > 1e-5 or opt.prob_mode != 0 or opt.far_thresh > 0) and (opt.prob_kernel_size is None or tier < (len(opt.prob_kernel_size) // 3)):
@@ -929,6 +932,7 @@ def main():
             total_steps += 1
             model.set_input(data)
             if opt.bgmodel.endswith("plane"):
+                print("####################  forth if ######################")
                 if len(bg_ray_train_lst) > 0:
                     bg_ray_all = bg_ray_train_lst[data["id"]]
                     bg_idx = data["pixel_idx"].view(-1,2)
@@ -938,25 +942,29 @@ def main():
                     bg_ray, fg_masks = model.set_bg(xyz_world_sect_plane, img_lst, c2ws_lst, w2cs_lst, intrinsics_all, HDWD_lst, fg_masks=fg_masks)
                 data["bg_ray"] = bg_ray
             model.optimize_parameters(total_steps=total_steps)
-
+            # ipdb.set_trace()
             losses = model.get_current_losses()
             visualizer.accumulate_losses(losses)
 
             if opt.lr_policy.startswith("iter"):
+                print("####################  fifth if ######################")
                 model.update_learning_rate(opt=opt, total_steps=total_steps)
 
             if total_steps and total_steps % opt.print_freq == 0:
+                print("####################  sixth if ######################")
                 if opt.show_tensorboard:
                     visualizer.plot_current_losses_with_tb(total_steps, losses)
                 visualizer.print_losses(total_steps)
                 visualizer.reset()
 
             if hasattr(opt, "save_point_freq") and total_steps and total_steps % opt.save_point_freq == 0 and (opt.prune_iter > 0 and total_steps <= opt.prune_max_iter or opt.save_point_freq==1):
+                print("####################  seventh if ######################")
                 visualizer.save_neural_points(total_steps, model.neural_points.xyz, model.neural_points.points_embeding, data, save_ref=opt.load_points==0)
                 visualizer.print_details('saving neural points at total_steps {})'.format(total_steps))
 
             try:
                 if total_steps == 10000 or (total_steps % opt.save_iter_freq == 0 and total_steps > 0):
+                    print("####################  eighth if ######################")
                     other_states = {
                         "best_PSNR": best_PSNR,
                         "best_iter": best_iter,
@@ -970,6 +978,7 @@ def main():
 
 
             if opt.vid > 0 and total_steps % opt.vid == 0 and total_steps > 0:
+                print("####################  ninth if ######################")
                 torch.cuda.empty_cache()
                 test_dataset = create_render_dataset(test_opt, opt, total_steps, test_num_step=opt.test_num_step)
                 model.opt.is_train = 0
@@ -981,6 +990,7 @@ def main():
                 del test_dataset
 
             if total_steps == 10000 or (total_steps % opt.test_freq == 0 and total_steps < (opt.maximum_step - 1) and total_steps > 0):
+                print("####################  tenth if ######################")
                 torch.cuda.empty_cache()
                 test_dataset = create_test_dataset(test_opt, opt, total_steps, test_num_step=opt.test_num_step)
                 model.opt.is_train = 0
@@ -999,6 +1009,7 @@ def main():
                 best_PSNR = max(test_psnr, best_PSNR)
                 visualizer.print_details(f"test at iter {total_steps}, PSNR: {test_psnr}, best_PSNR: {best_PSNR}, best_iter: {best_iter}")
             model.train()
+            print("####################  after train ######################")
 
         # try:
         #     print("saving the model at the end of epoch")

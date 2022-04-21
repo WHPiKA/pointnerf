@@ -367,7 +367,6 @@ class BaseRenderingModel(BaseModel):
         self.prepare_network_parameters(opt)
 
         self.create_network_models(opt)
-
         #check model creation
         if not self.model_names:
             print(
@@ -547,7 +546,7 @@ class BaseRenderingModel(BaseModel):
                 if masked_output.shape[1] > 0:
                     loss = self.l2loss(masked_output, masked_gt)
                 else:
-                    loss = torch.tensor(0.0, dtype=torch.float32, device=masked_output.device)
+                    loss = torch.tensor(0.0, dtype=torch.float32, device=masked_output.device).requires_grad_()
                 # print("loss", name, torch.max(torch.abs(loss)))
             elif name.startswith("ray_miss"):
                 unmasked_name = name[len("ray_miss") + 1:]
@@ -600,7 +599,7 @@ class BaseRenderingModel(BaseModel):
                 # print("no_mask")
                 loss = self.l2loss(self.output[name], self.gt_image)
                 # print("loss", name, torch.max(torch.abs(loss)))
-            self.loss_total += (loss * opt.color_loss_weights[i] + 1e-6)
+            self.loss_total += (loss * opt.color_loss_weights[i] + 1e-6)  # loss 1
             # loss.register_hook(lambda grad: print(torch.any(torch.isnan(grad)), grad, opt.color_loss_weights[i]))
 
             setattr(self, "loss_" + name, loss)
@@ -613,7 +612,7 @@ class BaseRenderingModel(BaseModel):
                       fmt.END)
             loss = self.l2loss(self.output[name] * self.gt_mask,
                                self.gt_depth * self.gt_mask)
-            self.loss_total += loss * opt.depth_loss_weights[i]
+            self.loss_total += loss * opt.depth_loss_weights[i]  # loss 2
             setattr(self, "loss_" + name, loss)
 
         #background losses
@@ -623,7 +622,7 @@ class BaseRenderingModel(BaseModel):
                       fmt.END)
             loss = self.l2loss(self.output[name] * (1 - self.gt_mask),
                                1 - self.gt_mask)
-            self.loss_total += loss * opt.bg_loss_weights[i]
+            self.loss_total += loss * opt.bg_loss_weights[i]  # loss 3
             setattr(self, "loss_" + name, loss)
 
         #zero_one regularization losses
@@ -637,7 +636,7 @@ class BaseRenderingModel(BaseModel):
                                   1 - self.opt.zero_epsilon)
                 # print("self.output[name]",torch.min(self.output[name]), torch.max(self.output[name]))
                 loss = torch.mean(torch.log(val) + torch.log(1 - val))
-                self.loss_total += loss * opt.zero_one_loss_weights[i]
+                self.loss_total += loss * opt.zero_one_loss_weights[i]  # loss 4
                 setattr(self, "loss_" + name, loss)
 
         # l2 square regularization losses
@@ -646,7 +645,7 @@ class BaseRenderingModel(BaseModel):
                 print(fmt.YELLOW + "No required l2_size_loss_item : " + name + fmt.END)
             loss = self.l2loss(self.output[name], torch.zeros_like(self.output[name]))
             # print("self.output[name]", self.output[name].shape, loss.shape)
-            self.loss_total += loss * opt.l2_size_loss_weights[i]
+            self.loss_total += loss * opt.l2_size_loss_weights[i]  # loss 5
             setattr(self, "loss_" + name, loss)
 
         if opt.sparse_loss_weight > 0:
@@ -658,7 +657,7 @@ class BaseRenderingModel(BaseModel):
             # print("self.output[name]", self.output[name].shape, loss.shape)
             self.output.pop('weight')
             self.output.pop('conf_coefficient')
-            self.loss_total += loss * opt.sparse_loss_weight
+            self.loss_total += loss * opt.sparse_loss_weight  # loss 6
             setattr(self, "loss_sparse", loss)
 
         # self.loss_total = Variable(self.loss_total, requires_grad=True)

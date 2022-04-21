@@ -73,6 +73,7 @@ class Visualizer:
                 filename = 'step-{:04d}-{}.png'.format(total_steps, name)
                 filepath = os.path.join(self.image_dir, filename)
                 save_image(img, filepath)
+                self.tb_writer.add_image(filename, img, dataformats='HWC')
 
     def display_video(self, visual_lst, total_steps):
         for name in visual_lst[0].keys():

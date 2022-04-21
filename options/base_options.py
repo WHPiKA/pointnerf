@@ -85,7 +85,7 @@ class BaseOptions:
                             help='models are saved here')
         parser.add_argument('--show_tensorboard',
                             type=int,
-                            default=0,
+                            default=1,  # modified
                             help='plot loss curves with tensorboard')
         parser.add_argument('--resume_dir',
                             type=str,
