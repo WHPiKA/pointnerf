@@ -384,7 +384,6 @@ class BaseRenderingModel(BaseModel):
             self.setup_optimizer(opt)
 
     def set_input(self, input):
-
         # setup self.input
         # this dict is supposed to be sent the network via **self.input in run_network_modules
         self.input = input
@@ -534,9 +533,10 @@ class BaseRenderingModel(BaseModel):
             The total loss is saved in self.loss_total.
             Every loss will be set to an attr, self.loss_lossname
         '''
-
         self.loss_total = 0
         opt = self.opt
+        import ipdb
+        ipdb.set_trace()
         #color losses
         for i, name in enumerate(opt.color_loss_items):
             if name.startswith("ray_masked"):
@@ -669,5 +669,7 @@ class BaseRenderingModel(BaseModel):
             self.optimizer.step()
 
     def optimize_parameters(self, backward=True, total_steps=0):
+        import ipdb
+        ipdb.set_trace()
         self.forward()
         self.backward()

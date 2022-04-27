@@ -357,6 +357,7 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
         print("plydata", plydata.elements[0])
         x,y,z=torch.as_tensor(plydata.elements[0].data["x"].astype(np.float32), device="cuda", dtype=torch.float32), torch.as_tensor(plydata.elements[0].data["y"].astype(np.float32), device="cuda", dtype=torch.float32), torch.as_tensor(plydata.elements[0].data["z"].astype(np.float32), device="cuda", dtype=torch.float32)
         points_xyz = torch.stack([x,y,z], dim=-1).to(torch.float32)
+        print()
 
         # np.savetxt(os.path.join(self.data_dir, self.scan, "exported/pcd.txt"), points_xyz.cpu().numpy(), delimiter=";")
         if self.opt.comb_file is not None:
@@ -380,11 +381,13 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
         self.intrinsic[1, :] *= (self.height / self.intrinsic[1, 2] / 2)
         focal = self.intrinsic[0, 0]
         self.focal = focal
-        self.near_far = np.array([2.0, 6.0])
+        # self.near_far = np.array([2.0, 6.0])
+        self.near_far = np.array([self.opt.near_plane, self.opt.far_plane])
         for vid in list:
             frame = meta['frames'][vid]
             # c2w = np.array(frame['transform_matrix']) @ self.blender2opencv
-            c2w = np.array(frame['transform_matrix']) @ self.opencv2carlaright
+            # c2w = np.array(frame['transform_matrix']) @ self.opencv2carlaright
+            c2w = np.array(frame['transform_matrix'])
             if norm_w2c is not None:
                 c2w = norm_w2c @ c2w
             w2c = np.linalg.inv(c2w)
@@ -417,10 +420,11 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
         self.image_paths = []
         self.poses = []
         self.all_rays = []
-        self.blackimgs = []
-        self.whiteimgs = []
-        self.depths = []
-        self.alphas = []
+        self.depth_paths = []
+        # self.blackimgs = []
+        # self.whiteimgs = []
+        # self.depths = []
+        # self.alphas = []
 
         self.view_id_dict = {}
         self.directions = get_ray_directions(h, w, [self.focal, self.focal])  # (h, w, 3)
@@ -431,14 +435,19 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
 
             # image_path = os.path.join(self.data_dir, self.scan, f"{frame['file_path']}.png")
             image_path = os.path.join(self.data_dir, self.scan, f"{frame['file_path']}.jpg")
+            assert os.path.exists(image_path)
             self.image_paths += [image_path]
-            img = Image.open(image_path)
-            img = img.resize(self.img_wh, Image.LANCZOS)
-            img = self.transform(img)  # (4, h, w)
-            self.depths += [(img[-1:, ...] > 0.1).numpy().astype(np.float32)]
-            self.alphas += [img[-1:].numpy().astype(np.float32)]
-            self.blackimgs += [img[:3] * img[-1:]]
-            self.whiteimgs += [img[:3] * img[-1:] + (1 - img[-1:])]
+            depth_path = os.path.join(self.data_dir, self.scan, f"{frame['depth_path']}.jpg")
+            assert os.path.exists(depth_path)
+            self.depth_paths += [depth_path]
+
+            # img = Image.open(image_path)
+            # img = img.resize(self.img_wh, Image.LANCZOS)
+            # img = self.transform(img)  # (4, h, w)
+            # self.depths += [(img[-1:, ...] > 0.1).numpy().astype(np.float32)]
+            # self.alphas += [img[-1:].numpy().astype(np.float32)]
+            # self.blackimgs += [img[:3] * img[-1:]]
+            # self.whiteimgs += [img[:3] * img[-1:] + (1 - img[-1:])]
 
 
             # ray directions for all pixels, same for all images (same H, W, focal)
@@ -487,8 +496,21 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
             vid = self.view_id_dict[i]
             # mvs_images += [self.normalize_rgb(self.blackimgs[vid])]
             # mvs_images += [self.whiteimgs[vid]]
-            mvs_images += [self.blackimgs[vid]]
-            imgs += [self.whiteimgs[vid]]
+
+            image_path = self.image_paths[vid]
+            img = Image.open(image_path)
+            img = img.resize(self.img_wh, Image.LANCZOS)
+            img = self.transform(img)  # (4, h, w)
+            depth_path = self.depth_paths[vid]
+            depth_img = Image.open(depth_path)
+            depth_img = depth_img.resize(self.img_wh, Image.LANCZOS)
+            depth_img = self.transform(depth_img)
+            depth_img = 1 - depth_img
+
+            mvs_images += [img[:3] * depth_img]
+            imgs += [img[:3] * depth_img + (1 - depth_img)]
+            # mvs_images += [self.blackimgs[vid]]
+            # imgs += [self.whiteimgs[vid]]
             proj_mat_ls, near_far = self.proj_mats[vid]
             intrinsics.append(self.intrinsics[vid])
             w2cs.append(self.world2cams[vid])
@@ -496,8 +518,11 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
 
             affine_mat.append(proj_mat_ls)
             affine_mat_inv.append(np.linalg.inv(proj_mat_ls))
-            depths_h.append(self.depths[vid])
-            alphas.append(self.alphas[vid])
+            # depths_h.append((img[-1:, ...] > 0.1).numpy().astype(np.float32))
+            depths_h.append((depth_img > (300 / 1000)).numpy().astype(np.float32))  # fixed value for mask range
+            alphas.append(depth_img.numpy().astype(np.float32))
+            # depths_h.append(self.depths[vid])
+            # alphas.append(self.alphas[vid])
             near_fars.append(near_far)
 
         for i in range(len(affine_mat)):
@@ -553,7 +578,21 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
 
     def __getitem__(self, id, crop=False, full_img=False):
         item = {}
-        img = self.whiteimgs[id]
+
+        image_path = self.image_paths[id]
+        img = Image.open(image_path)
+        img = img.resize(self.img_wh, Image.LANCZOS)
+        img = self.transform(img)  # (4, h, w)
+
+        depth_path = self.depth_paths[id]
+        depth_img = Image.open(depth_path)
+        depth_img = depth_img.resize(self.img_wh, Image.LANCZOS)
+        depth_img = self.transform(depth_img)
+        depth_img = 1 - depth_img
+
+        # img = img[:3] * depth_img + (1 - depth_img)
+        img = img[:3]
+        # img = self.whiteimgs[id]
         w2c = self.world2cams[id]
         c2w = self.cam2worlds[id]
         intrinsic = self.intrinsics[id]
@@ -581,7 +620,8 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
         item['near'] = torch.FloatTensor([near_far[0]]).view(1, 1)
         item['h'] = height
         item['w'] = width
-        item['depths_h'] = self.depths[id]
+        item['depths_h'] = (depth_img > (700 / 1000)).numpy().astype(np.float32)
+        # item['depths_h'] = self.depths[id]
         # bounding box
         if full_img:
             item['images'] = img[None,...]
@@ -627,7 +667,10 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
         gt_image = gt_image[py.astype(np.int32), px.astype(np.int32)]
         # gt_mask = gt_mask[py.astype(np.int32), px.astype(np.int32), :]
         gt_image = np.reshape(gt_image, (-1, 3))
+        gt_depths = item['depths_h'][:,:,py.astype(np.int32), px.astype(np.int32)]
+        gt_depths = np.reshape(gt_depths, (-1, 3))
         item['gt_image'] = gt_image
+        item['gt_depths'] = gt_depths
         item['id'] = id
 
         if self.bg_color:
@@ -646,7 +689,8 @@ class CarlaNerfSynth360FtDataset(BaseDataset):
 
     def get_item(self, idx, crop=False, full_img=False):
         item = self.__getitem__(idx, crop=crop, full_img=full_img)
-
+        import ipdb
+        ipdb.set_trace()
         for key, value in item.items():
             if not isinstance(value, str):
                 if not torch.is_tensor(value):

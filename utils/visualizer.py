@@ -36,6 +36,8 @@ def save_points(xyz, dir, total_steps):
         np.savetxt(filepath, xyz[i, ...].reshape(-1, xyz.shape[-1]), delimiter=";")
 
 
+
+
 class Visualizer:
     def __init__(self, opt):
         self.opt = opt

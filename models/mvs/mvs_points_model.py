@@ -223,7 +223,6 @@ class MvsPointsModel(nn.Module):
 
 
     def query_embedding(self, HDWD, cam_xyz, photometric_confidence, img_feats, c2ws, w2cs, intrinsics, cam_vid, pointdir_w=False):
-
         HD, WD = HDWD
         points_embedding = []
         points_dirs = None
